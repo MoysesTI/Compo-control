@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Box, 
@@ -11,13 +11,15 @@ import {
   CircularProgress,
   InputAdornment,
   IconButton,
-  Divider
+  Divider,
+  Snackbar
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   Email as EmailIcon,
-  Lock as LockIcon
+  Lock as LockIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -27,11 +29,43 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  
+  const { login, authError } = useAuth();
   const navigate = useNavigate();
+  
+  // Check for URL parameters that might indicate a redirect or message
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get('message');
+    const fromReset = params.get('fromReset');
+    
+    if (message) {
+      setSnackbarMessage(message);
+      setSnackbarOpen(true);
+    }
+    
+    if (fromReset === 'true') {
+      setSnackbarMessage('Um link de recuperação de senha foi enviado para seu email.');
+      setSnackbarOpen(true);
+    }
+  }, []);
+  
+  // Set error message from auth context
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+    }
+  }, [authError]);
 
   async function handleSubmit(e) {
     e.preventDefault();
+    
+    if (!email || !password) {
+      setError('Por favor, preencha todos os campos.');
+      return;
+    }
     
     try {
       setError('');
@@ -39,15 +73,19 @@ export default function Login() {
       await login(email, password);
       navigate('/');
     } catch (error) {
-      setError('Falha ao fazer login. Verifique suas credenciais.');
+      // Error is already handled by authContext
       console.error(error);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   }
 
   const handleTogglePassword = () => {
     setShowPassword(!showPassword);
+  };
+  
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   return (
@@ -151,6 +189,13 @@ export default function Login() {
                 }}
                 sx={{ mb: 3 }}
               />
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                <Link to="/reset-password" style={{ textDecoration: 'none' }}>
+                  <Typography variant="body2" color="primary.main">
+                    Esqueceu sua senha?
+                  </Typography>
+                </Link>
+              </Box>
               <Button
                 type="submit"
                 fullWidth
@@ -184,6 +229,22 @@ export default function Login() {
           </Box>
         </Paper>
       </Container>
+      
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        message={snackbarMessage}
+        action={
+          <IconButton
+            size="small"
+            color="inherit"
+            onClick={handleSnackbarClose}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        }
+      />
     </Box>
   );
 }
