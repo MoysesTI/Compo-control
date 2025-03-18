@@ -118,7 +118,7 @@ function App() {
             {/* Rotas públicas */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            
+       
             {/* Rotas privadas */}
             <Route 
               path="/" 
@@ -168,9 +168,11 @@ function App() {
                     <Profile />
                   </Layout>
                 </PrivateRoute>
+                
               } 
             />
             
+
             {/* Página de 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>

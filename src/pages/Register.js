@@ -26,6 +26,8 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
+import { FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+
 export default function Register() {
   const [activeStep, setActiveStep] = useState(0);
   const [name, setName] = useState('');
@@ -36,7 +38,49 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // Dentro do Register.js, adicionar:
+
+
+// No componente Register
+const { isAdmin } = useAuth();
+const [role, setRole] = useState('funcionario');
+
+// No formulário de registro, após os campos de senha
+{isAdmin() && (
+  <FormControl fullWidth margin="normal">
+    <InputLabel id="role-select-label">Tipo de Usuário</InputLabel>
+    <Select
+      labelId="role-select-label"
+      id="role-select"
+      value={role}
+      label="Tipo de Usuário"
+      onChange={(e) => setRole(e.target.value)}
+    >
+      <MenuItem value="funcionario">Funcionário</MenuItem>
+      <MenuItem value="administrador">Administrador</MenuItem>
+    </Select>
+  </FormControl>
+)}
+
+// E modificar a função handleSubmit para incluir o role
+async function handleSubmit() {
+  if (password !== confirmPassword) {
+    setError('As senhas não coincidem');
+    return;
+  }
   
+  try {
+    setError('');
+    setLoading(true);
+    await signup(email, password, name, role); // Passar o role aqui
+    navigate('/');
+  } catch (error) {
+    setError('Falha ao criar conta. ' + error.message);
+    console.error(error);
+  } finally {
+    setLoading(false);
+  }
+}
   const { signup } = useAuth();
   const navigate = useNavigate();
 

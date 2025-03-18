@@ -22,7 +22,8 @@ import {
   useMediaQuery,
   Collapse,
   ListItemButton,
-  Tooltip
+  Tooltip,
+  Chip
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -39,7 +40,8 @@ import {
   ExpandMore as ExpandMoreIcon,
   Work as WorkIcon,
   PeopleAlt as PeopleIcon,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  AdminPanelSettings as AdminIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { styled, alpha } from '@mui/material/styles';
@@ -126,6 +128,9 @@ export default function Layout({ children }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [notificationsAnchorEl, setNotificationsAnchorEl] = useState(null);
   const [projectsOpen, setProjectsOpen] = useState(true);
+  
+  // Determinar se o usuário é um administrador
+  const isAdmin = userProfile?.role === 'administrador';
   
   // Fechar drawer móvel quando a rota muda
   useEffect(() => {
@@ -236,35 +241,39 @@ export default function Layout({ children }) {
       
       <Box sx={{ px: 2 }}>
         <List component="nav" sx={{ p: 0 }}>
-          <ListItem 
-            button 
-            component={Link} 
-            to="/"
-            selected={location.pathname === '/'}
-            sx={{ 
-              borderRadius: 2, 
-              mb: 1,
-              py: 1,
-              '&.Mui-selected': {
-                bgcolor: 'primary.main',
-                color: 'white',
-                '& .MuiListItemIcon-root': {
+          {/* Dashboard - Apenas para administradores */}
+          {isAdmin && (
+            <ListItem 
+              button 
+              component={Link} 
+              to="/"
+              selected={location.pathname === '/'}
+              sx={{ 
+                borderRadius: 2, 
+                mb: 1,
+                py: 1,
+                '&.Mui-selected': {
+                  bgcolor: 'primary.main',
                   color: 'white',
+                  '& .MuiListItemIcon-root': {
+                    color: 'white',
+                  },
                 },
-              },
-              '&:hover': {
-                bgcolor: 'secondary.light',
-              }
-            }}
-          >
-            <ListItemIcon>
-              <DashboardIcon />
-            </ListItemIcon>
-            {(desktopDrawerOpen || mobileDrawerOpen) && (
-              <ListItemText primary="Dashboard" />
-            )}
-          </ListItem>
+                '&:hover': {
+                  bgcolor: 'secondary.light',
+                }
+              }}
+            >
+              <ListItemIcon>
+                <DashboardIcon />
+              </ListItemIcon>
+              {(desktopDrawerOpen || mobileDrawerOpen) && (
+                <ListItemText primary="Dashboard" />
+              )}
+            </ListItem>
+          )}
           
+          {/* Quadros - Todos os usuários */}
           <ListItem 
             button 
             component={Link} 
@@ -294,35 +303,39 @@ export default function Layout({ children }) {
             )}
           </ListItem>
           
-          <ListItem 
-            button 
-            component={Link} 
-            to="/finances"
-            selected={location.pathname === '/finances'}
-            sx={{ 
-              borderRadius: 2, 
-              mb: 1,
-              py: 1,
-              '&.Mui-selected': {
-                bgcolor: 'primary.main',
-                color: 'white',
-                '& .MuiListItemIcon-root': {
+          {/* Finanças - Apenas para administradores */}
+          {isAdmin && (
+            <ListItem 
+              button 
+              component={Link} 
+              to="/finances"
+              selected={location.pathname === '/finances'}
+              sx={{ 
+                borderRadius: 2, 
+                mb: 1,
+                py: 1,
+                '&.Mui-selected': {
+                  bgcolor: 'primary.main',
                   color: 'white',
+                  '& .MuiListItemIcon-root': {
+                    color: 'white',
+                  },
                 },
-              },
-              '&:hover': {
-                bgcolor: 'secondary.light',
-              }
-            }}
-          >
-            <ListItemIcon>
-              <FinancesIcon />
-            </ListItemIcon>
-            {(desktopDrawerOpen || mobileDrawerOpen) && (
-              <ListItemText primary="Finanças" />
-            )}
-          </ListItem>
+                '&:hover': {
+                  bgcolor: 'secondary.light',
+                }
+              }}
+            >
+              <ListItemIcon>
+                <FinancesIcon />
+              </ListItemIcon>
+              {(desktopDrawerOpen || mobileDrawerOpen) && (
+                <ListItemText primary="Finanças" />
+              )}
+            </ListItem>
+          )}
           
+          {/* Equipe - Todos os usuários */}
           <ListItem 
             button 
             component={Link} 
@@ -354,6 +367,7 @@ export default function Layout({ children }) {
           
           <Divider sx={{ my: 2 }} />
           
+          {/* Projetos recentes - Todos os usuários */}
           {(desktopDrawerOpen || mobileDrawerOpen) && (
             <>
               <ListItemButton 
@@ -411,6 +425,7 @@ export default function Layout({ children }) {
           
           <Divider sx={{ my: 2 }} />
           
+          {/* Perfil - Todos os usuários */}
           <ListItem 
             button 
             component={Link} 
@@ -440,34 +455,37 @@ export default function Layout({ children }) {
             )}
           </ListItem>
           
-          <ListItem 
-            button 
-            component={Link} 
-            to="/settings"
-            selected={location.pathname === '/settings'}
-            sx={{ 
-              borderRadius: 2, 
-              mb: 1,
-              py: 1,
-              '&.Mui-selected': {
-                bgcolor: 'primary.main',
-                color: 'white',
-                '& .MuiListItemIcon-root': {
+          {/* Configurações - Apenas para administradores */}
+          {isAdmin && (
+            <ListItem 
+              button 
+              component={Link} 
+              to="/settings"
+              selected={location.pathname === '/settings'}
+              sx={{ 
+                borderRadius: 2, 
+                mb: 1,
+                py: 1,
+                '&.Mui-selected': {
+                  bgcolor: 'primary.main',
                   color: 'white',
+                  '& .MuiListItemIcon-root': {
+                    color: 'white',
+                  },
                 },
-              },
-              '&:hover': {
-                bgcolor: 'secondary.light',
-              }
-            }}
-          >
-            <ListItemIcon>
-              <SettingsIcon />
-            </ListItemIcon>
-            {(desktopDrawerOpen || mobileDrawerOpen) && (
-              <ListItemText primary="Configurações" />
-            )}
-          </ListItem>
+                '&:hover': {
+                  bgcolor: 'secondary.light',
+                }
+              }}
+            >
+              <ListItemIcon>
+                <SettingsIcon />
+              </ListItemIcon>
+              {(desktopDrawerOpen || mobileDrawerOpen) && (
+                <ListItemText primary="Configurações" />
+              )}
+            </ListItem>
+          )}
         </List>
       </Box>
       
@@ -489,9 +507,23 @@ export default function Layout({ children }) {
               sx={{ width: 36, height: 36, mr: 2 }}
             />
             <Box sx={{ overflow: 'hidden' }}>
-              <Typography variant="body2" noWrap sx={{ fontWeight: 'medium' }}>
-                {userProfile?.name || 'Usuário'}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="body2" noWrap sx={{ fontWeight: 'medium' }}>
+                  {userProfile?.name || 'Usuário'}
+                </Typography>
+                {isAdmin && (
+                  <Chip 
+                    size="small" 
+                    label="Admin" 
+                    sx={{ 
+                      height: 20, 
+                      fontSize: '0.625rem',
+                      bgcolor: 'primary.main',
+                      color: 'white'
+                    }} 
+                  />
+                )}
+              </Box>
               <Typography variant="caption" color="text.secondary" noWrap>
                 {userProfile?.email}
               </Typography>
@@ -550,8 +582,24 @@ export default function Layout({ children }) {
             {location.pathname === '/' ? 'Dashboard' : 
              location.pathname.startsWith('/boards') ? 'Quadros' :
              location.pathname === '/finances' ? 'Finanças' :
-             location.pathname === '/profile' ? 'Perfil' : 'Composição'}
+             location.pathname === '/team' ? 'Equipe' :
+             location.pathname === '/profile' ? 'Perfil' :
+             location.pathname === '/settings' ? 'Configurações' : 'Composição'}
           </Typography>
+          
+          {isAdmin && (
+            <Chip 
+              icon={<AdminIcon sx={{ color: 'white !important', fontSize: '0.875rem' }} />}
+              label="Administrador" 
+              size="small"
+              sx={{ 
+                ml: 2,
+                bgcolor: 'primary.main',
+                color: 'white',
+                display: { xs: 'none', sm: 'flex' }
+              }} 
+            />
+          )}
           
           <Box sx={{ flexGrow: 1 }} />
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -591,10 +639,12 @@ export default function Layout({ children }) {
                 <Typography variant="subtitle1" fontWeight="bold">Notificações</Typography>
               </Box>
               {[
-                { title: 'Novo orçamento', message: 'Cliente XYZ solicitou um orçamento', time: '5 min atrás' },
-                { title: 'Tarefa concluída', message: 'Ana concluiu o design do banner', time: '2 horas atrás' },
-                { title: 'Prazo próximo', message: 'Adesivação do veículo vence amanhã', time: '5 horas atrás' },
-              ].map((item, index) => (
+                { title: 'Novo orçamento', message: 'Cliente XYZ solicitou um orçamento', time: '5 min atrás', adminOnly: true },
+                { title: 'Tarefa concluída', message: 'Ana concluiu o design do banner', time: '2 horas atrás', adminOnly: false },
+                { title: 'Prazo próximo', message: 'Adesivação do veículo vence amanhã', time: '5 horas atrás', adminOnly: false },
+              ]
+              .filter(item => isAdmin || !item.adminOnly)
+              .map((item, index) => (
                 <MenuItem key={index} onClick={handleNotificationsClose} sx={{ py: 2 }}>
                   <Box>
                     <Typography variant="subtitle2">{item.title}</Typography>
@@ -639,6 +689,17 @@ export default function Layout({ children }) {
                 />
                 <Typography variant="subtitle1">{userProfile?.name || 'Usuário'}</Typography>
                 <Typography variant="body2" color="text.secondary">{userProfile?.email}</Typography>
+                {isAdmin && (
+                  <Chip 
+                    label="Administrador" 
+                    size="small" 
+                    sx={{ 
+                      mt: 1,
+                      bgcolor: 'primary.main',
+                      color: 'white'
+                    }} 
+                  />
+                )}
               </Box>
               <Divider />
               <MenuItem component={Link} to="/profile" onClick={handleProfileMenuClose}>
@@ -647,6 +708,14 @@ export default function Layout({ children }) {
                 </ListItemIcon>
                 <ListItemText>Perfil</ListItemText>
               </MenuItem>
+              {isAdmin && (
+                <MenuItem component={Link} to="/settings" onClick={handleProfileMenuClose}>
+                  <ListItemIcon>
+                    <SettingsIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Configurações</ListItemText>
+                </MenuItem>
+              )}
               <MenuItem onClick={() => { handleProfileMenuClose(); handleLogout(); }}>
                 <ListItemIcon>
                   <LogoutIcon fontSize="small" />
