@@ -6,15 +6,12 @@ import { AuthProvider } from './contexts/AuthContext';
 // Páginas
 import Login from './pages/Login';
 import Register from './pages/Register';
-import PasswordReset from './pages/PasswordReset';
 import Dashboard from './pages/Dashboard';
 import Boards from './pages/Boards';
-import BoardDetail from './pages/BoardDetail';
+import EnhancedBoardDetail from './pages/EnhancedBoardDetail'; // Componente melhorado
 import Finances from './pages/Finances';
 import Profile from './pages/Profile';
 import NotFound from './pages/NotFound';
-import Settings from './pages/Settings';
-import Team from './pages/Team';
 
 // Componentes de layout
 import PrivateRoute from './components/layout/PrivateRoute';
@@ -35,31 +32,10 @@ const theme = createTheme({
       dark: '#D0BC9D',   // Bege escuro
       contrastText: '#333',
     },
-    success: {
-      light: '#A5D6A7',
-      main: '#4CAF50',
-      dark: '#388E3C',
-    },
-    warning: {
-      light: '#FFE082',
-      main: '#FFC107',
-      dark: '#FFA000',
-    },
-    error: {
-      light: '#EF9A9A',
-      main: '#F44336',
-      dark: '#D32F2F',
-    },
-    info: {
-      light: '#81D4FA',
-      main: '#03A9F4',
-      dark: '#0288D1',
-    },
     neutral: {
       light: '#F7F7F7',
       main: '#EFEFEF',
       dark: '#D9D9D9',
-      white: '#FFFFFF',
     },
     background: {
       default: '#F7F7F7',
@@ -68,6 +44,18 @@ const theme = createTheme({
     text: {
       primary: '#333333',
       secondary: '#666666',
+    },
+    error: {
+      main: '#F44336',
+    },
+    warning: {
+      main: '#FFC107',
+    },
+    info: {
+      main: '#03A9F4',
+    },
+    success: {
+      main: '#4CAF50',
     },
   },
   typography: {
@@ -118,30 +106,6 @@ const theme = createTheme({
         },
       },
     },
-    MuiSnackbar: {
-      styleOverrides: {
-        root: {
-          maxWidth: 400,
-          '& .MuiPaper-root': {
-            borderRadius: 8,
-          },
-        },
-      },
-    },
-    MuiAlert: {
-      styleOverrides: {
-        root: {
-          borderRadius: 8,
-        },
-      },
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          fontWeight: 500,
-        },
-      },
-    },
   },
 });
 
@@ -154,7 +118,6 @@ function App() {
             {/* Rotas públicas */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/reset-password" element={<PasswordReset />} />
             
             {/* Rotas privadas */}
             <Route 
@@ -182,7 +145,7 @@ function App() {
               element={
                 <PrivateRoute>
                   <Layout>
-                    <BoardDetail />
+                    <EnhancedBoardDetail />
                   </Layout>
                 </PrivateRoute>
               } 
@@ -198,31 +161,11 @@ function App() {
               } 
             />
             <Route 
-              path="/team" 
-              element={
-                <PrivateRoute>
-                  <Layout>
-                    <Team />
-                  </Layout>
-                </PrivateRoute>
-              } 
-            />
-            <Route 
               path="/profile" 
               element={
                 <PrivateRoute>
                   <Layout>
                     <Profile />
-                  </Layout>
-                </PrivateRoute>
-              } 
-            />
-            <Route 
-              path="/settings" 
-              element={
-                <PrivateRoute>
-                  <Layout>
-                    <Settings />
                   </Layout>
                 </PrivateRoute>
               } 

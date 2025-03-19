@@ -1,200 +1,415 @@
-// src/services/cardService.js
 import { 
     collection, 
+    doc, 
+    getDoc, 
+    getDocs, 
     addDoc, 
     updateDoc, 
     deleteDoc, 
-    doc, 
     query, 
     where, 
-    getDocs,
+    orderBy, 
     serverTimestamp,
-    getDoc
+    writeBatch
   } from 'firebase/firestore';
   import { db } from '../firebase/config';
   
   /**
-   * Serviço para gerenciamento de cards
+   * Card data validator
+   * @param {Object} cardData - Card data to validate
+   * @returns {Object} - { isValid, errors }
+   */
+  const validateCardData = (cardData) => {
+    const errors = {};
+    
+    // Title is required
+    if (!cardData.title || cardData.title.trim() === '') {
+      errors.title = 'O título é obrigatório';
+    }
+    
+    // Validate due date format if present
+    if (cardData.dueDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/;
+      if (!dateRegex.test(cardData.dueDate)) {
+        errors.dueDate = 'Formato de data inválido';
+      }
+    }
+    
+    // Check visibility
+    if (cardData.visibility && cardData.visibility !== 'public' && cardData.visibility !== 'private') {
+      errors.visibility = 'Visibilidade deve ser "public" ou "private"';
+    }
+    
+    // If private, it should have assigned members
+    if (cardData.visibility === 'private' && 
+        (!cardData.assignedTo || cardData.assignedTo.length === 0)) {
+      errors.assignedTo = 'Cartões privados devem ter membros atribuídos';
+    }
+    
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  };
+  
+  /**
+   * Service for card operations with enhanced error handling
    */
   export const cardService = {
     /**
-     * Busca todos os cards de um quadro específico
-     * @param {string} boardId - ID do quadro
+     * Get cards for a column
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {string} userId - User ID for filtering (optional)
+     * @param {boolean} isAdmin - Whether the user is admin (optional)
+     * @returns {Promise<Array>} - Array of cards
      */
-    async getCardsByBoardId(boardId) {
+    getCards: async (boardId, columnId, userId = null, isAdmin = false) => {
       try {
-        console.log(`Buscando cards para o quadro: ${boardId}`);
+        console.log(`Fetching cards for column: ${columnId} in board: ${boardId}`);
+        const cardsRef = collection(db, "boards", boardId, "columns", columnId, "cards");
+        let cardsQuery;
         
-        if (!boardId) {
-          console.error('boardId não fornecido para getCardsByBoardId');
-          return [];
+        cardsQuery = query(cardsRef, orderBy("order", "asc"));
+        
+        const cardsSnapshot = await getDocs(cardsQuery);
+        
+        // Filter cards based on visibility and assignment
+        let cards = cardsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        if (!isAdmin && userId) {
+          cards = cards.filter(card => 
+            card.visibility === 'public' || 
+            (card.visibility === 'private' && card.assignedTo?.includes(userId))
+          );
         }
         
-        const cardsRef = collection(db, 'cards');
-        const q = query(cardsRef, where('boardId', '==', boardId));
-        
-        console.log('Executando query para buscar cards...');
-        const querySnapshot = await getDocs(q);
-        
-        const cards = [];
-        querySnapshot.forEach((doc) => {
-          cards.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-        
-        console.log(`Encontrados ${cards.length} cards para o quadro ${boardId}`);
+        console.log(`Retrieved ${cards.length} cards for column: ${columnId}`);
         return cards;
       } catch (error) {
-        console.error('Erro ao buscar cards:', error);
-        throw error;
+        console.error(`Error getting cards for column ${columnId}:`, error);
+        throw new Error(`Falha ao carregar cartões: ${error.message}`);
       }
     },
     
     /**
-     * Cria um novo card
-     * @param {Object} cardData - Dados do card
+     * Get a specific card
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {string} cardId - Card ID
+     * @returns {Promise<Object>} - Card data
      */
-    async createCard(cardData) {
+    getCard: async (boardId, columnId, cardId) => {
       try {
-        console.log('Criando novo card com dados:', cardData);
+        console.log(`Fetching card ${cardId} from column: ${columnId} in board: ${boardId}`);
+        const cardRef = doc(db, "boards", boardId, "columns", columnId, "cards", cardId);
+        const cardSnapshot = await getDoc(cardRef);
         
-        if (!cardData.boardId) {
-          throw new Error('boardId é obrigatório para criar um card');
+        if (!cardSnapshot.exists()) {
+          console.error(`Card ${cardId} not found`);
+          throw new Error(`Cartão não encontrado`);
         }
         
-        if (!cardData.columnId) {
-          throw new Error('columnId é obrigatório para criar um card');
+        return { id: cardSnapshot.id, ...cardSnapshot.data() };
+      } catch (error) {
+        console.error(`Error getting card ${cardId}:`, error);
+        throw new Error(`Falha ao carregar o cartão: ${error.message}`);
+      }
+    },
+    
+    /**
+     * Add a card to a column
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {Object} cardData - Card data
+     * @param {string} userId - User ID who is creating the card
+     * @returns {Promise<string>} - New card ID
+     */
+    addCard: async (boardId, columnId, cardData, userId) => {
+      try {
+        console.log(`Adding card to column ${columnId} in board: ${boardId}`);
+        
+        if (!userId) {
+          console.error('User ID not provided');
+          throw new Error('ID de usuário não fornecido');
         }
         
-        // Validar se o quadro existe
-        const boardRef = doc(db, 'boards', cardData.boardId);
-        const boardSnapshot = await getDoc(boardRef);
-        
-        if (!boardSnapshot.exists()) {
-          throw new Error(`Quadro com ID ${cardData.boardId} não encontrado`);
+        // Verify board exists
+        try {
+          const boardRef = doc(db, "boards", boardId);
+          const boardSnapshot = await getDoc(boardRef);
+          
+          if (!boardSnapshot.exists()) {
+            console.error(`Board ${boardId} not found`);
+            throw new Error(`Quadro não encontrado`);
+          }
+        } catch (boardError) {
+          console.error('Error checking board:', boardError);
+          throw new Error(`Erro ao verificar quadro: ${boardError.message}`);
         }
         
-        // Adicionar timestamps e valores padrão
-        const cardWithTimestamps = {
+        // Verify column exists
+        try {
+          const columnRef = doc(db, "boards", boardId, "columns", columnId);
+          const columnSnapshot = await getDoc(columnRef);
+          
+          if (!columnSnapshot.exists()) {
+            console.error(`Column ${columnId} not found`);
+            throw new Error(`Coluna não encontrada`);
+          }
+        } catch (columnError) {
+          console.error('Error checking column:', columnError);
+          throw new Error(`Erro ao verificar coluna: ${columnError.message}`);
+        }
+        
+        // Ensure minimal card data
+        const cardWithDefaults = {
+          title: '',
+          description: '',
+          labels: [],
+          members: [],
+          assignedTo: [],
+          visibility: 'public',
+          comments: 0,
+          attachments: 0,
           ...cardData,
-          attachments: cardData.attachments || 0,
-          comments: cardData.comments || 0,
-          progress: cardData.progress || 0,
-          status: cardData.status || 'Pendente',
+          boardId,
+          columnId,
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          createdBy: userId
         };
         
-        const docRef = await addDoc(collection(db, 'cards'), cardWithTimestamps);
-        console.log(`Card criado com ID: ${docRef.id}`);
+        // Validate card data
+        const validation = validateCardData(cardWithDefaults);
+        if (!validation.isValid) {
+          console.error(`Card validation failed:`, validation.errors);
+          throw new Error(`Dados do cartão inválidos: ${Object.values(validation.errors).join(', ')}`);
+        }
         
-        // Recuperar o card criado para garantir que temos os dados completos
-        const newCardSnapshot = await getDoc(docRef);
+        // Get current card count for order
+        const cardsRef = collection(db, "boards", boardId, "columns", columnId, "cards");
+        const cardsSnapshot = await getDocs(cardsRef);
+        const order = cardsSnapshot.size;
         
-        // Retornar o card com seu ID
-        return {
-          id: docRef.id,
-          ...newCardSnapshot.data()
-        };
+        // Add card to Firestore
+        try {
+          const newCardRef = await addDoc(cardsRef, {
+            ...cardWithDefaults,
+            order
+          });
+          
+          console.log(`Card added with ID: ${newCardRef.id}`);
+          return newCardRef.id;
+        } catch (addError) {
+          console.error('Error adding card to Firestore:', addError);
+          if (addError.code === 'permission-denied') {
+            throw new Error('Permissões ausentes ou insuficientes. Tente fazer login novamente.');
+          }
+          throw new Error(`Erro ao adicionar cartão ao Firestore: ${addError.message}`);
+        }
       } catch (error) {
-        console.error('Erro ao criar card:', error);
-        throw error;
+        console.error("Error adding card:", error);
+        throw new Error(`Falha ao adicionar cartão: ${error.message}`);
       }
     },
     
     /**
-     * Atualiza um card existente
-     * @param {string} cardId - ID do card
-     * @param {Object} cardData - Novos dados do card
+     * Update a card
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {string} cardId - Card ID
+     * @param {Object} cardData - Updated card data
+     * @returns {Promise<void>}
      */
-    async updateCard(cardId, cardData) {
+    updateCard: async (boardId, columnId, cardId, cardData) => {
       try {
-        console.log(`Atualizando card ${cardId} com dados:`, cardData);
+        console.log(`Updating card ${cardId} in column ${columnId}`);
         
-        const cardRef = doc(db, 'cards', cardId);
-        
-        // Verificar se o card existe
+        // Check if card exists
+        const cardRef = doc(db, "boards", boardId, "columns", columnId, "cards", cardId);
         const cardSnapshot = await getDoc(cardRef);
+        
         if (!cardSnapshot.exists()) {
-          throw new Error(`Card com ID ${cardId} não encontrado`);
+          console.error(`Card ${cardId} not found`);
+          throw new Error(`Cartão não encontrado`);
         }
         
-        const updatedData = {
+        // Prepare update data
+        const updateData = {
           ...cardData,
           updatedAt: serverTimestamp()
         };
         
-        await updateDoc(cardRef, updatedData);
-        console.log(`Card ${cardId} atualizado com sucesso`);
+        // Validate card data
+        const validation = validateCardData({
+          ...cardSnapshot.data(),
+          ...updateData
+        });
         
-        // Recuperar o card atualizado
-        const updatedCardSnapshot = await getDoc(cardRef);
+        if (!validation.isValid) {
+          console.error(`Card validation failed:`, validation.errors);
+          throw new Error(`Dados do cartão inválidos: ${Object.values(validation.errors).join(', ')}`);
+        }
         
-        return {
-          id: cardId,
-          ...updatedCardSnapshot.data()
-        };
+        // Update card in Firestore
+        await updateDoc(cardRef, updateData);
+        console.log(`Card ${cardId} updated successfully`);
       } catch (error) {
-        console.error('Erro ao atualizar card:', error);
-        throw error;
+        console.error(`Error updating card ${cardId}:`, error);
+        throw new Error(`Falha ao atualizar cartão: ${error.message}`);
       }
     },
     
     /**
-     * Exclui um card
-     * @param {string} cardId - ID do card
+     * Delete a card
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {string} cardId - Card ID
+     * @returns {Promise<void>}
      */
-    async deleteCard(cardId) {
+    deleteCard: async (boardId, columnId, cardId) => {
       try {
-        console.log(`Excluindo card com ID: ${cardId}`);
+        console.log(`Deleting card ${cardId} from column ${columnId}`);
         
-        const cardRef = doc(db, 'cards', cardId);
-        
-        // Verificar se o card existe
+        // Check if card exists
+        const cardRef = doc(db, "boards", boardId, "columns", columnId, "cards", cardId);
         const cardSnapshot = await getDoc(cardRef);
+        
         if (!cardSnapshot.exists()) {
-          throw new Error(`Card com ID ${cardId} não encontrado`);
+          console.error(`Card ${cardId} not found`);
+          throw new Error(`Cartão não encontrado`);
         }
         
+        // Delete card from Firestore
         await deleteDoc(cardRef);
-        console.log(`Card ${cardId} excluído com sucesso`);
+        console.log(`Card ${cardId} deleted successfully`);
         
-        return true;
+        // Reorder remaining cards
+        await cardService.reorderCards(boardId, columnId);
       } catch (error) {
-        console.error('Erro ao excluir card:', error);
-        throw error;
+        console.error(`Error deleting card ${cardId}:`, error);
+        throw new Error(`Falha ao excluir cartão: ${error.message}`);
       }
     },
     
     /**
-     * Move um card para outra coluna
-     * @param {string} cardId - ID do card
-     * @param {string} newColumnId - ID da nova coluna
+     * Reorder cards in a column
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @returns {Promise<void>}
      */
-    async moveCard(cardId, newColumnId) {
+    reorderCards: async (boardId, columnId) => {
       try {
-        console.log(`Movendo card ${cardId} para coluna ${newColumnId}`);
+        console.log(`Reordering cards in column ${columnId}`);
+        const cardsRef = collection(db, "boards", boardId, "columns", columnId, "cards");
+        const cardsQuery = query(cardsRef, orderBy("order", "asc"));
+        const cardsSnapshot = await getDocs(cardsQuery);
         
-        const cardRef = doc(db, 'cards', cardId);
+        const batch = writeBatch(db);
         
-        // Verificar se o card existe
+        cardsSnapshot.docs.forEach((cardDoc, index) => {
+          const cardRef = doc(db, "boards", boardId, "columns", columnId, "cards", cardDoc.id);
+          batch.update(cardRef, { order: index });
+        });
+        
+        await batch.commit();
+        console.log(`Cards reordered in column ${columnId}`);
+      } catch (error) {
+        console.error(`Error reordering cards in column ${columnId}:`, error);
+        throw new Error(`Falha ao reordenar cartões: ${error.message}`);
+      }
+    },
+    
+    /**
+     * Move a card from one column to another
+     * @param {string} boardId - Board ID
+     * @param {string} sourceColumnId - Source column ID
+     * @param {string} destColumnId - Destination column ID
+     * @param {string} cardId - Card ID
+     * @param {number} destIndex - Destination index
+     * @returns {Promise<void>}
+     */
+    moveCard: async (boardId, sourceColumnId, destColumnId, cardId, destIndex) => {
+      try {
+        console.log(`Moving card ${cardId} from column ${sourceColumnId} to column ${destColumnId}`);
+        
+        // Get card data
+        const cardRef = doc(db, "boards", boardId, "columns", sourceColumnId, "cards", cardId);
         const cardSnapshot = await getDoc(cardRef);
+        
         if (!cardSnapshot.exists()) {
-          throw new Error(`Card com ID ${cardId} não encontrado`);
+          console.error(`Card ${cardId} not found`);
+          throw new Error(`Cartão não encontrado`);
         }
         
-        await updateDoc(cardRef, {
-          columnId: newColumnId,
+        const cardData = cardSnapshot.data();
+        
+        // Add card to destination column
+        const destCardsRef = collection(db, "boards", boardId, "columns", destColumnId, "cards");
+        const newCardRef = await addDoc(destCardsRef, {
+          ...cardData,
+          columnId: destColumnId,
+          order: destIndex,
           updatedAt: serverTimestamp()
         });
         
-        console.log(`Card ${cardId} movido para coluna ${newColumnId} com sucesso`);
-        return true;
+        console.log(`Card created in destination column with ID: ${newCardRef.id}`);
+        
+        // Delete card from source column
+        await deleteDoc(cardRef);
+        console.log(`Card deleted from source column`);
+        
+        // Reorder cards in both columns
+        await cardService.reorderCards(boardId, sourceColumnId);
+        await cardService.reorderCards(boardId, destColumnId);
       } catch (error) {
-        console.error('Erro ao mover card:', error);
-        throw error;
+        console.error(`Error moving card ${cardId}:`, error);
+        throw new Error(`Falha ao mover cartão: ${error.message}`);
+      }
+    },
+    
+    /**
+     * Assign members to a card
+     * @param {string} boardId - Board ID
+     * @param {string} columnId - Column ID
+     * @param {string} cardId - Card ID
+     * @param {Array} memberIds - Array of member IDs
+     * @param {Array} memberNames - Array of member names
+     * @param {string} visibility - Card visibility ('public' or 'private')
+     * @returns {Promise<void>}
+     */
+    assignMembers: async (boardId, columnId, cardId, memberIds, memberNames, visibility) => {
+      try {
+        console.log(`Assigning members to card ${cardId}`);
+        
+        // Check if card exists
+        const cardRef = doc(db, "boards", boardId, "columns", columnId, "cards", cardId);
+        const cardSnapshot = await getDoc(cardRef);
+        
+        if (!cardSnapshot.exists()) {
+          console.error(`Card ${cardId} not found`);
+          throw new Error(`Cartão não encontrado`);
+        }
+        
+        // Validate visibility and membership
+        if (visibility === 'private' && memberIds.length === 0) {
+          console.error(`Cannot set a card to private without assigning members`);
+          throw new Error(`Cartões privados devem ter membros atribuídos`);
+        }
+        
+        // Update card in Firestore
+        await updateDoc(cardRef, {
+          assignedTo: memberIds,
+          members: memberNames,
+          visibility,
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log(`Members assigned to card ${cardId} successfully`);
+      } catch (error) {
+        console.error(`Error assigning members to card ${cardId}:`, error);
+        throw new Error(`Falha ao atribuir membros: ${error.message}`);
       }
     }
   };
