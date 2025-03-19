@@ -1,119 +1,87 @@
+// src/components/common/ConfirmationDialog.js
 import React from 'react';
-import {
-  Dialog,
+import { 
+  Button, 
+  Dialog, 
+  DialogActions, 
+  DialogContent, 
+  DialogContentText, 
   DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Button,
-  Box,
-  Typography,
-  IconButton
+  Slide
 } from '@mui/material';
-import {
-  Warning as WarningIcon,
-  Close as CloseIcon
-} from '@mui/icons-material';
+
+const Transition = React.forwardRef(function Transition(props, ref) {
+  return <Slide direction="up" ref={ref} {...props} />;
+});
 
 /**
- * Reusable confirmation dialog component
+ * Componente de diálogo de confirmação reutilizável
  * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {Function} props.onClose - Callback when dialog is closed without confirmation
- * @param {Function} props.onConfirm - Callback when action is confirmed
- * @param {string} props.title - Dialog title
- * @param {string} props.message - Dialog message
- * @param {string} props.confirmText - Text for confirm button
- * @param {string} props.cancelText - Text for cancel button
- * @param {string} props.severity - Severity level ('warning', 'error', 'info')
+ * @param {Object} props - Propriedades do componente
+ * @param {boolean} props.open - Se o diálogo está aberto
+ * @param {string} props.title - Título do diálogo
+ * @param {string|React.ReactNode} props.content - Conteúdo do diálogo
+ * @param {Function} props.onConfirm - Função chamada ao confirmar
+ * @param {Function} props.onCancel - Função chamada ao cancelar
+ * @param {string} props.confirmText - Texto do botão de confirmação
+ * @param {string} props.cancelText - Texto do botão de cancelar
+ * @param {string} props.confirmColor - Cor do botão de confirmação ('primary', 'error', etc)
+ * @param {boolean} props.fullWidth - Se o diálogo deve ocupar a largura completa
+ * @param {string} props.maxWidth - Largura máxima do diálogo ('xs', 'sm', 'md', etc)
  */
-export default function ConfirmationDialog({
+function ConfirmationDialog({
   open,
-  onClose,
+  title,
+  content,
   onConfirm,
-  title = 'Confirmar Ação',
-  message = 'Tem certeza que deseja continuar?',
+  onCancel,
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
-  severity = 'warning'
+  confirmColor = 'primary',
+  fullWidth = true,
+  maxWidth = 'xs'
 }) {
-  // Get color based on severity
-  const getSeverityColor = () => {
-    switch (severity) {
-      case 'error':
-        return 'error.main';
-      case 'warning':
-        return 'warning.main';
-      case 'info':
-        return 'info.main';
-      default:
-        return 'warning.main';
-    }
-  };
+  // Usando React.useCallback para evitar recriações desnecessárias
+  const handleConfirm = React.useCallback(() => {
+    if (onConfirm) onConfirm();
+  }, [onConfirm]);
+
+  const handleCancel = React.useCallback(() => {
+    if (onCancel) onCancel();
+  }, [onCancel]);
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
-      aria-labelledby="confirmation-dialog-title"
-      aria-describedby="confirmation-dialog-description"
-      maxWidth="xs"
-      fullWidth
+      TransitionComponent={Transition}
+      keepMounted
+      onClose={handleCancel}
+      aria-describedby="alert-dialog-slide-description"
+      fullWidth={fullWidth}
+      maxWidth={maxWidth}
     >
-      <Box sx={{ position: 'relative' }}>
-        <IconButton
-          aria-label="close"
-          onClick={onClose}
-          sx={{
-            position: 'absolute',
-            right: 8,
-            top: 8,
-            color: (theme) => theme.palette.grey[500],
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
-      </Box>
-      
-      <DialogTitle id="confirmation-dialog-title" sx={{ pt: 3, pb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <WarningIcon 
-            sx={{ 
-              color: getSeverityColor(),
-              mr: 1,
-              fontSize: 28
-            }} 
-          />
-          <Typography variant="h6" component="span">
-            {title}
-          </Typography>
-        </Box>
-      </DialogTitle>
+      {title && <DialogTitle>{title}</DialogTitle>}
       
       <DialogContent>
-        <DialogContentText id="confirmation-dialog-description">
-          {message}
-        </DialogContentText>
+        {typeof content === 'string' ? (
+          <DialogContentText id="alert-dialog-slide-description">
+            {content}
+          </DialogContentText>
+        ) : (
+          content
+        )}
       </DialogContent>
       
-      <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button 
-          onClick={onClose} 
-          color="inherit"
-          variant="outlined"
-        >
+      <DialogActions>
+        <Button onClick={handleCancel} color="inherit">
           {cancelText}
         </Button>
-        <Button 
-          onClick={onConfirm} 
-          color={severity === 'error' ? 'error' : 'primary'}
-          variant="contained"
-          autoFocus
-        >
+        <Button onClick={handleConfirm} color={confirmColor} variant="contained">
           {confirmText}
         </Button>
       </DialogActions>
     </Dialog>
   );
 }
+
+export default ConfirmationDialog;

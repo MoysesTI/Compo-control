@@ -1,325 +1,369 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+// src/pages/EnhancedDashboard.js
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { 
-  Box, 
-  Typography, 
-  Grid, 
-  Card, 
-  CardContent, 
-  CardActions, 
-  Button, 
-  Dialog, 
-  DialogTitle, 
-  DialogContent, 
-  DialogActions, 
-  TextField, 
-  IconButton, 
-  Avatar, 
-  AvatarGroup, 
-  Menu, 
-  MenuItem, 
-  Chip,
-  CircularProgress,
-  Alert,
-  Snackbar,
-  Skeleton,
-  FormControl,
-  InputLabel,
-  Select,
-  Backdrop
+  Box, Typography, Grid, Paper, Card, CardContent, CardHeader, 
+  IconButton, Divider, Avatar, LinearProgress, Skeleton, Chip,
+  List, ListItem, ListItemText, ListItemAvatar, ListItemSecondaryAction,
+  Button, Menu, MenuItem, Badge, Tooltip, Alert, useTheme
 } from '@mui/material';
 import { 
-  Add as AddIcon, 
   MoreVert as MoreVertIcon, 
-  Star as StarIcon, 
-  StarBorder as StarBorderIcon,
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-  People as PeopleIcon,
-  Share as ShareIcon
+  Add as AddIcon,
+  ArrowUpward as ArrowUpwardIcon,
+  ArrowDownward as ArrowDownwardIcon,
+  Today as TodayIcon,
+  Visibility as VisibilityIcon,
+  FilterList as FilterListIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import boardService from '../services/boardService';
-import ConfirmationDialog from '../components/common/ConfirmationDialog';
+import firebaseService from '../services/firebaseService';
+import { collection, query, orderBy, limit, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { format, differenceInDays, isBefore, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 
-export default function EnhancedBoards() {
-  const navigate = useNavigate();
-  const { currentUser, userProfile } = useAuth();
-  
-  // State for boards
+export default function EnhancedDashboard() {
+  const theme = useTheme();
+  const { userProfile } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [boardsList, setBoardsList] = useState([]);
-  
-  // State for UI controls
-  const [openNewBoardDialog, setOpenNewBoardDialog] = useState(false);
-  const [newBoardTitle, setNewBoardTitle] = useState('');
-  const [newBoardColor, setNewBoardColor] = useState('#2E78D2'); // Azul por padrão
-  const [boardMenuAnchorEl, setBoardMenuAnchorEl] = useState(null);
-  const [selectedBoard, setSelectedBoard] = useState(null);
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [processingAction, setProcessingAction] = useState(false);
-  
-  // State for snackbar notifications
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'info'
+  const [error, setError] = useState(null);
+  const [recentTasks, setRecentTasks] = useState([]);
+  const [favoriteBoards, setFavoriteBoards] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [filterAnchorEl, setFilterAnchorEl] = useState(null);
+  const [stats, setStats] = useState({
+    pendingTasks: 0,
+    activeProjects: 0,
+    pendingQuotes: 0,
+    completedTasks: 0
   });
-  
-  // Color options
-  const colorOptions = [
-    { name: 'Azul', value: '#2E78D2' },
-    { name: 'Verde', value: '#4CAF50' },
-    { name: 'Vermelho', value: '#F44336' },
-    { name: 'Amarelo', value: '#FFC107' },
-    { name: 'Roxo', value: '#9C27B0' },
-    { name: 'Laranja', value: '#FF9800' },
-    { name: 'Bege', value: '#E8DCC5' },
-  ];
+  const [tasksByStatus, setTasksByStatus] = useState([]);
+  const [tasksByTeamMember, setTasksByTeamMember] = useState([]);
+  const [selectedPeriod, setSelectedPeriod] = useState('week');
 
-  // Fetch boards
-  const fetchBoards = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      console.log('Fetching boards');
-      const boards = await boardService.getBoards(currentUser.uid);
-      
-      setBoardsList(boards);
-      console.log(`Loaded ${boards.length} boards`);
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching boards:', error);
-      setError(`Falha ao carregar quadros: ${error.message}`);
-      setLoading(false);
-      
-      setSnackbar({
-        open: true,
-        message: `Erro ao carregar quadros: ${error.message}`,
-        severity: 'error'
-      });
-    }
-  }, [currentUser.uid]);
+  // Gerar cores para o gráfico
+  const pieColors = useMemo(() => {
+    return [
+      theme.palette.primary.main,
+      theme.palette.warning.main,
+      theme.palette.success.main,
+      theme.palette.error.main,
+      theme.palette.info.main
+    ];
+  }, [theme]);
 
-  // Load boards on component mount
+  // Carregar dados do dashboard
   useEffect(() => {
-    fetchBoards();
-  }, [fetchBoards]);
-
-  // Handle new board dialog
-  const handleOpenNewBoardDialog = () => {
-    setNewBoardTitle('');
-    setOpenNewBoardDialog(true);
-  };
-
-  const handleCloseNewBoardDialog = () => {
-    setOpenNewBoardDialog(false);
-  };
-
-  const handleCreateBoard = async () => {
-    if (newBoardTitle.trim() === '') {
-      setSnackbar({
-        open: true,
-        message: 'O título do quadro não pode estar vazio',
-        severity: 'error'
-      });
-      return;
-    }
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // Fetch favorite boards
+        const boardsQuery = query(
+          collection(db, 'boards'),
+          where('members', 'array-contains', userProfile?.id),
+          orderBy('updatedAt', 'desc'),
+          limit(5)
+        );
+        
+        const boardsSnapshot = await getDocs(boardsQuery);
+        const boardsData = [];
+        
+        boardsSnapshot.forEach((doc) => {
+          boardsData.push({ id: doc.id, ...doc.data() });
+        });
+        
+        setFavoriteBoards(boardsData);
+        
+        // Fetch recent tasks across all boards
+        let allTasks = [];
+        
+        for (const board of boardsData) {
+          const columnsQuery = query(
+            collection(db, `boards/${board.id}/columns`)
+          );
+          
+          const columnsSnapshot = await getDocs(columnsQuery);
+          
+          for (const columnDoc of columnsSnapshot.docs) {
+            const cardsQuery = query(
+              collection(db, `boards/${board.id}/columns/${columnDoc.id}/cards`),
+              orderBy('updatedAt', 'desc'),
+              limit(10)
+            );
+            
+            const cardsSnapshot = await getDocs(cardsQuery);
+            
+            cardsSnapshot.forEach((cardDoc) => {
+              allTasks.push({
+                id: cardDoc.id,
+                boardId: board.id,
+                boardTitle: board.title,
+                columnId: columnDoc.id,
+                columnTitle: columnDoc.data().title,
+                ...cardDoc.data()
+              });
+            });
+          }
+        }
+        
+        // Sort by updated date and limit to 10
+        allTasks.sort((a, b) => {
+          const dateA = a.updatedAt?.toDate() || new Date(0);
+          const dateB = b.updatedAt?.toDate() || new Date(0);
+          return dateB - dateA;
+        });
+        
+        setRecentTasks(allTasks.slice(0, 10));
+        
+        // Calculate statistics
+        const pendingTasks = allTasks.filter(task => 
+          task.columnTitle.toLowerCase() !== 'concluído' && 
+          task.columnTitle.toLowerCase() !== 'done'
+        ).length;
+        
+        const completedTasks = allTasks.filter(task => 
+          task.columnTitle.toLowerCase() === 'concluído' || 
+          task.columnTitle.toLowerCase() === 'done'
+        ).length;
+        
+        const pendingQuotes = 0; // This would come from finances data
+        
+        setStats({
+          pendingTasks,
+          activeProjects: boardsData.length,
+          pendingQuotes,
+          completedTasks
+        });
+        
+        // Tasks by status for chart
+        const statusCounts = {};
+        
+        allTasks.forEach(task => {
+          const status = task.columnTitle;
+          if (!statusCounts[status]) {
+            statusCounts[status] = 0;
+          }
+          statusCounts[status]++;
+        });
+        
+        const statusData = Object.keys(statusCounts).map(status => ({
+          name: status,
+          value: statusCounts[status]
+        }));
+        
+        setTasksByStatus(statusData);
+        
+        // Fetch team members
+        const membersQuery = query(
+          collection(db, 'users'),
+          limit(10)
+        );
+        
+        const membersSnapshot = await getDocs(membersQuery);
+        const membersData = [];
+        
+        membersSnapshot.forEach((doc) => {
+          membersData.push({ id: doc.id, ...doc.data() });
+        });
+        
+        setTeamMembers(membersData);
+        
+        // Tasks by team member
+        const memberTaskCounts = {};
+        
+        allTasks.forEach(task => {
+          if (task.members && task.members.length > 0) {
+            task.members.forEach(memberId => {
+              if (!memberTaskCounts[memberId]) {
+                memberTaskCounts[memberId] = 0;
+              }
+              memberTaskCounts[memberId]++;
+            });
+          }
+        });
+        
+        const memberTasks = membersData.map(member => ({
+          name: member.name,
+          tasks: memberTaskCounts[member.id] || 0
+        })).sort((a, b) => b.tasks - a.tasks).slice(0, 5);
+        
+        setTasksByTeamMember(memberTasks);
+      } catch (err) {
+        console.error('Erro ao carregar dashboard:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
     
-    try {
-      setProcessingAction(true);
-      console.log(`Creating new board: ${newBoardTitle}`);
+    if (userProfile?.id) {
+      fetchDashboardData();
       
-      const boardData = {
-        title: newBoardTitle,
-        description: `Quadro criado em ${new Date().toLocaleDateString()}`,
-        color: newBoardColor,
-        memberNames: [userProfile?.name || 'Usuário']
+      // Set up real-time listeners for important data
+      // This would be expanded in a real implementation
+      
+      return () => {
+        // Clean up any listeners
       };
-      
-      const newBoardId = await boardService.createBoard(boardData, currentUser.uid);
-      
-      // Close dialog and reset form
-      handleCloseNewBoardDialog();
-      setProcessingAction(false);
-      
-      // Show success message
-      setSnackbar({
-        open: true,
-        message: 'Quadro criado com sucesso!',
-        severity: 'success'
-      });
-      
-      // Navigate to the new board
-      navigate(`/boards/${newBoardId}`);
-    } catch (error) {
-      console.error('Error creating board:', error);
-      setProcessingAction(false);
-      
-      setSnackbar({
-        open: true,
-        message: `Erro ao criar quadro: ${error.message}`,
-        severity: 'error'
-      });
     }
+  }, [userProfile]);
+
+  // Handlers para menus
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
   };
 
-  // Board menu handlers
-  const handleBoardMenuOpen = (event, board) => {
-    setBoardMenuAnchorEl(event.currentTarget);
-    setSelectedBoard(board);
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+  
+  const handleFilterOpen = (event) => {
+    setFilterAnchorEl(event.currentTarget);
+  };
+  
+  const handleFilterClose = () => {
+    setFilterAnchorEl(null);
+  };
+  
+  const handlePeriodChange = (period) => {
+    setSelectedPeriod(period);
+    handleFilterClose();
   };
 
-  const handleBoardMenuClose = () => {
-    setBoardMenuAnchorEl(null);
-    setSelectedBoard(null);
-  };
-
-  // Toggle board as favorite
-  const handleToggleFavorite = async (id, currentState) => {
-    try {
-      console.log(`Toggling favorite for board ${id} to: ${!currentState}`);
-      
-      // Optimistic update
-      setBoardsList(boardsList.map(board => 
-        board.id === id ? { ...board, favorite: !currentState } : board
-      ));
-      
-      // Update in Firebase
-      await boardService.toggleFavorite(id, !currentState);
-      
-      setSnackbar({
-        open: true,
-        message: !currentState 
-          ? 'Quadro adicionado aos favoritos!' 
-          : 'Quadro removido dos favoritos!',
-        severity: 'success'
-      });
-    } catch (error) {
-      console.error('Error toggling favorite:', error);
-      
-      // Revert optimistic update
-      setBoardsList(boardsList.map(board => 
-        board.id === id ? { ...board, favorite: currentState } : board
-      ));
-      
-      setSnackbar({
-        open: true,
-        message: `Erro ao alterar favorito: ${error.message}`,
-        severity: 'error'
-      });
-    }
-  };
-
-  // Delete board
-  const handleDeleteClick = () => {
-    setConfirmDeleteOpen(true);
-    handleBoardMenuClose();
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!selectedBoard) return;
+  // Função para renderizar status das tarefas
+  const getTaskStatusChip = (task) => {
+    const status = task.columnTitle.toLowerCase();
     
-    try {
-      setProcessingAction(true);
-      console.log(`Deleting board: ${selectedBoard.id}`);
-      
-      await boardService.deleteBoard(selectedBoard.id);
-      
-      // Update state
-      setBoardsList(boardsList.filter(board => board.id !== selectedBoard.id));
-      
-      setConfirmDeleteOpen(false);
-      setProcessingAction(false);
-      
-      setSnackbar({
-        open: true,
-        message: 'Quadro excluído com sucesso!',
-        severity: 'success'
-      });
-    } catch (error) {
-      console.error('Error deleting board:', error);
-      setConfirmDeleteOpen(false);
-      setProcessingAction(false);
-      
-      setSnackbar({
-        open: true,
-        message: `Erro ao excluir quadro: ${error.message}`,
-        severity: 'error'
-      });
+    if (status === 'concluído' || status === 'done') {
+      return (
+        <Chip 
+          label="Concluído" 
+          size="small" 
+          sx={{ bgcolor: 'success.main', color: 'white' }}
+        />
+      );
+    } else if (status === 'em andamento' || status === 'doing' || status === 'in progress') {
+      return (
+        <Chip 
+          label="Em Andamento" 
+          size="small" 
+          sx={{ bgcolor: 'info.main', color: 'white' }}
+        />
+      );
+    } else if (status === 'a fazer' || status === 'to do') {
+      return (
+        <Chip 
+          label="A Fazer" 
+          size="small" 
+          sx={{ bgcolor: 'warning.main', color: 'white' }}
+        />
+      );
+    } else if (status === 'revisão' || status === 'review') {
+      return (
+        <Chip 
+          label="Revisão" 
+          size="small" 
+          sx={{ bgcolor: 'secondary.main', color: 'white' }}
+        />
+      );
+    } else {
+      return (
+        <Chip 
+          label={task.columnTitle} 
+          size="small" 
+          sx={{ bgcolor: 'grey.500', color: 'white' }}
+        />
+      );
     }
   };
-
-  // Close snackbar
-  const handleCloseSnackbar = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
+  
+  // Função para calcular o progresso com base no prazo
+  const getTaskProgress = (task) => {
+    if (!task.dueDate) return 0;
+    
+    const now = new Date();
+    const dueDate = typeof task.dueDate === 'string' 
+      ? parseISO(task.dueDate) 
+      : task.dueDate.toDate();
+    
+    if (task.columnTitle.toLowerCase() === 'concluído' || 
+        task.columnTitle.toLowerCase() === 'done') {
+      return 100;
     }
-    setSnackbar({ ...snackbar, open: false });
+    
+    if (isBefore(dueDate, now)) {
+      return 100; // Atrasada
+    }
+    
+    const totalDays = differenceInDays(
+      dueDate,
+      task.createdAt?.toDate() || now
+    );
+    
+    if (totalDays <= 0) return 50;
+    
+    const daysLeft = differenceInDays(dueDate, now);
+    const daysUsed = totalDays - daysLeft;
+    
+    // Cálculo de porcentagem inversa (quanto mais perto do prazo, mais completo)
+    const progress = Math.max(0, Math.min(100, (daysUsed / totalDays) * 100));
+    
+    return progress;
+  };
+  
+  // Função para formatar data
+  const formatDate = (date) => {
+    if (!date) return '';
+    
+    const dateObj = typeof date === 'string' 
+      ? parseISO(date) 
+      : date.toDate ? date.toDate() : date;
+    
+    return format(dateObj, 'dd/MM/yyyy', { locale: ptBR });
   };
 
-  // Ordenar os quadros: favoritos primeiro, depois alfabeticamente
-  const sortedBoards = [...boardsList].sort((a, b) => {
-    if (a.favorite && !b.favorite) return -1;
-    if (!a.favorite && b.favorite) return 1;
-    return a.title.localeCompare(b.title);
-  });
-
-  // Filtered lists
-  const favoriteBoards = sortedBoards.filter(board => board.favorite);
-  const regularBoards = sortedBoards.filter(board => !board.favorite);
-
-  // Loading state
   if (loading) {
     return (
       <Box sx={{ padding: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-          <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.dark' }}>
-            Quadros
-          </Typography>
-          <Skeleton variant="rectangular" width={150} height={40} />
-        </Box>
+        <Typography variant="h4" sx={{ mb: 4 }}>Dashboard</Typography>
         
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          <Skeleton width={150} />
-        </Typography>
-        
-        <Grid container spacing={3}>
-          {[1, 2, 3].map((item) => (
-            <Grid item xs={12} sm={6} md={4} key={item}>
-              <Skeleton variant="rectangular" width="100%" height={200} sx={{ borderRadius: 2 }} />
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          {[1, 2, 3, 4].map((item) => (
+            <Grid item xs={12} sm={6} md={3} key={item}>
+              <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 3 }} />
             </Grid>
           ))}
+        </Grid>
+        
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={7}>
+            <Skeleton variant="rectangular" height={400} sx={{ borderRadius: 3 }} />
+          </Grid>
+          <Grid item xs={12} md={5}>
+            <Skeleton variant="rectangular" height={400} sx={{ borderRadius: 3 }} />
+          </Grid>
         </Grid>
       </Box>
     );
   }
 
-  // Error state
-  if (error && boardsList.length === 0) {
+  if (error) {
     return (
       <Box sx={{ padding: 3 }}>
-        <Alert 
-          severity="error" 
-          sx={{ mb: 3 }}
-          action={
-            <Button color="inherit" size="small" onClick={fetchBoards}>
-              Tentar Novamente
-            </Button>
-          }
-        >
-          {error}
+        <Alert severity="error" sx={{ mb: 3 }}>
+          Erro ao carregar o dashboard: {error}
         </Alert>
         
         <Button 
           variant="contained" 
-          startIcon={<AddIcon />} 
-          onClick={handleOpenNewBoardDialog}
+          onClick={() => window.location.reload()}
         >
-          Novo Quadro
+          Tentar Novamente
         </Button>
       </Box>
     );
@@ -327,374 +371,499 @@ export default function EnhancedBoards() {
 
   return (
     <Box sx={{ padding: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.dark' }}>
-          Quadros
+          Dashboard
         </Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<AddIcon />} 
-          onClick={handleOpenNewBoardDialog}
-          sx={{ 
-            bgcolor: 'primary.main',
-            color: 'white',
-            '&:hover': { bgcolor: 'primary.dark' }
-          }}
-        >
-          Novo Quadro
-        </Button>
-      </Box>
-      
-      {/* Error banner if there was an error but we still have boards */}
-      {error && (
-        <Alert 
-          severity="error" 
-          sx={{ mb: 3 }}
-          action={
-            <Button color="inherit" size="small" onClick={fetchBoards}>
-              Tentar Novamente
-            </Button>
-          }
-        >
-          {error}
-        </Alert>
-      )}
-      
-      {/* Quadros favoritos */}
-      {favoriteBoards.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-            <StarIcon sx={{ color: '#FFC107', mr: 1 }} /> 
-            Favoritos
-          </Typography>
-          <Grid container spacing={3}>
-            {favoriteBoards.map((board) => (
-              <Grid item xs={12} sm={6} md={4} key={board.id}>
-                <Card sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  borderRadius: 2,
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  position: 'relative',
-                  '&:hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
-                  bgcolor: 'white'
-                }}>
-                  <Box sx={{ 
-                    height: 8, 
-                    width: '100%', 
-                    bgcolor: board.color || '#2E78D2'
-                  }} />
-                  <Box sx={{ 
-                    position: 'absolute', 
-                    top: 8, 
-                    right: 8, 
-                    display: 'flex',
-                    gap: 0.5
-                  }}>
-                    <IconButton 
-                      size="small" 
-                      onClick={() => handleToggleFavorite(board.id, board.favorite)}
-                      sx={{ bgcolor: 'rgba(255,255,255,0.8)' }}
-                    >
-                      {board.favorite ? 
-                        <StarIcon fontSize="small" sx={{ color: '#FFC107' }} /> : 
-                        <StarBorderIcon fontSize="small" />
-                      }
-                    </IconButton>
-                    <IconButton 
-                      size="small" 
-                      onClick={(e) => handleBoardMenuOpen(e, board)}
-                      sx={{ bgcolor: 'rgba(255,255,255,0.8)' }}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                  <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                    <Typography variant="h6" component="div" sx={{ mb: 1 }}>
-                      {board.title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {board.description}
-                    </Typography>
-                    <AvatarGroup max={4} sx={{ '& .MuiAvatar-root': { width: 30, height: 30, fontSize: '0.8rem' } }}>
-                      {board.memberNames?.map((member, idx) => (
-                        <Avatar key={idx} sx={{ bgcolor: 'primary.main' }}>
-                          {typeof member === 'string' ? member.charAt(0) : '?'}
-                        </Avatar>
-                      ))}
-                    </AvatarGroup>
-                  </CardContent>
-                  <CardActions sx={{ p: 2, pt: 0 }}>
-                    <Button 
-                      size="small" 
-                      component={Link} 
-                      to={`/boards/${board.id}`}
-                      sx={{ color: 'primary.main' }}
-                    >
-                      Abrir
-                    </Button>
-                  </CardActions>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
-      )}
-      
-      {/* Todos os quadros */}
-      <Box>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          {favoriteBoards.length > 0 ? 'Todos os Quadros' : 'Meus Quadros'}
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         
-        {regularBoards.length === 0 ? (
-          <Box sx={{ py: 3, textAlign: 'center' }}>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-              {boardsList.length === 0 ? 
-                'Você não tem nenhum quadro ainda.' : 
-                'Todos os seus quadros estão nos favoritos.'}
-            </Typography>
-            <Button 
-              variant="outlined" 
-              startIcon={<AddIcon />} 
-              onClick={handleOpenNewBoardDialog}
-            >
-              Criar Primeiro Quadro
-            </Button>
-          </Box>
-        ) : (
-          <Grid container spacing={3}>
-            {regularBoards.map((board) => (
-              <Grid item xs={12} sm={6} md={4} key={board.id}>
-                <Card sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  borderRadius: 2,
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  position: 'relative',
-                  '&:hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
-                  bgcolor: 'white'
-                }}>
-                  <Box sx={{ 
-                    height: 8, 
-                    width: '100%', 
-                    bgcolor: board.color || '#2E78D2'
-                  }} />
-                  <Box sx={{ 
-                    position: 'absolute', 
-                    top: 8, 
-                    right: 8, 
-                    display: 'flex',
-                    gap: 0.5
-                  }}>
-                    <IconButton 
-                      size="small" 
-                      onClick={() => handleToggleFavorite(board.id, board.favorite)}
-                      sx={{ bgcolor: 'rgba(255,255,255,0.8)' }}
-                    >
-                      {board.favorite ? 
-                        <StarIcon fontSize="small" sx={{ color: '#FFC107' }} /> : 
-                        <StarBorderIcon fontSize="small" />
-                      }
-                    </IconButton>
-                    <IconButton 
-                      size="small" 
-                      onClick={(e) => handleBoardMenuOpen(e, board)}
-                      sx={{ bgcolor: 'rgba(255,255,255,0.8)' }}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                  <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                    <Typography variant="h6" component="div" sx={{ mb: 1 }}>
-                      {board.title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {board.description}
-                    </Typography>
-                    <AvatarGroup max={4} sx={{ '& .MuiAvatar-root': { width: 30, height: 30, fontSize: '0.8rem' } }}>
-                      {board.memberNames?.map((member, idx) => (
-                        <Avatar key={idx} sx={{ bgcolor: 'primary.main' }}>
-                          {typeof member === 'string' ? member.charAt(0) : '?'}
-                        </Avatar>
-                      ))}
-                    </AvatarGroup>
-                  </CardContent>
-                  <CardActions sx={{ p: 2, pt: 0 }}>
-                    <Button 
-                      size="small" 
-                      component={Link} 
-                      to={`/boards/${board.id}`}
-                      sx={{ color: 'primary.main' }}
-                    >
-                      Abrir
-                    </Button>
-                  </CardActions>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        )}
-      </Box>
-      
-      {/* Board Menu */}
-      <Menu
-        anchorEl={boardMenuAnchorEl}
-        open={Boolean(boardMenuAnchorEl)}
-        onClose={handleBoardMenuClose}
-      >
-        <MenuItem component={Link} to={`/boards/${selectedBoard?.id}`} onClick={handleBoardMenuClose}>
-          <EditIcon fontSize="small" sx={{ mr: 1 }} />
-          Abrir
-        </MenuItem>
-        <MenuItem onClick={() => {
-          handleToggleFavorite(selectedBoard?.id, selectedBoard?.favorite);
-          handleBoardMenuClose();
-        }}>
-          {selectedBoard?.favorite ? 
-            <> 
-              <StarBorderIcon fontSize="small" sx={{ mr: 1 }} />
-              Remover dos Favoritos
-            </> : 
-            <>
-              <StarIcon fontSize="small" sx={{ mr: 1, color: '#FFC107' }} />
-              Adicionar aos Favoritos
-            </>
-          }
-        </MenuItem>
-        <MenuItem onClick={handleBoardMenuClose}>
-          <ShareIcon fontSize="small" sx={{ mr: 1 }} />
-          Compartilhar
-        </MenuItem>
-        <MenuItem onClick={handleBoardMenuClose}>
-          <PeopleIcon fontSize="small" sx={{ mr: 1 }} />
-          Gerenciar Membros
-        </MenuItem>
-        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
-          <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
-          Excluir
-        </MenuItem>
-      </Menu>
-      
-      {/* New Board Dialog */}
-      <Dialog 
-        open={openNewBoardDialog} 
-        onClose={handleCloseNewBoardDialog}
-        maxWidth="xs" 
-        fullWidth
-      >
-        <DialogTitle>Criar Novo Quadro</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Título do Quadro"
-            fullWidth
-            variant="outlined"
-            value={newBoardTitle}
-            onChange={(e) => setNewBoardTitle(e.target.value)}
-            error={newBoardTitle.trim() === ''}
-            helperText={newBoardTitle.trim() === '' ? 'O título é obrigatório' : ''}
-            sx={{ mb: 2 }}
-          />
-          
-          <FormControl fullWidth variant="outlined">
-            <InputLabel id="board-color-label">Cor</InputLabel>
-            <Select
-              labelId="board-color-label"
-              value={newBoardColor}
-              onChange={(e) => setNewBoardColor(e.target.value)}
-              label="Cor"
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <Box 
-                    sx={{ 
-                      width: 20, 
-                      height: 20, 
-                      borderRadius: '50%', 
-                      bgcolor: selected,
-                      mr: 1,
-                      border: '1px solid rgba(0,0,0,0.1)'
-                    }} 
-                  />
-                  {colorOptions.find(c => c.value === selected)?.name || 'Cor'}
-                </Box>
-              )}
-            >
-              {colorOptions.map((color) => (
-                <MenuItem key={color.value} value={color.value}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Box 
-                      sx={{ 
-                        width: 20, 
-                        height: 20, 
-                        borderRadius: '50%', 
-                        bgcolor: color.value,
-                        mr: 1,
-                        border: '1px solid rgba(0,0,0,0.1)'
-                      }} 
-                    />
-                    {color.name}
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseNewBoardDialog} disabled={processingAction}>
-            Cancelar
-          </Button>
-          <Button 
-            onClick={handleCreateBoard}
-            variant="contained"
-            disabled={newBoardTitle.trim() === '' || processingAction}
-            sx={{ bgcolor: 'primary.main', color: 'white' }}
+        <Tooltip title="Filtrar">
+          <IconButton 
+            color="primary" 
+            sx={{ mr: 1, bgcolor: 'secondary.light', borderRadius: 2 }}
+            onClick={handleFilterOpen}
           >
-            {processingAction ? <CircularProgress size={24} /> : 'Criar'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Confirmation Dialog for Delete */}
-      <ConfirmationDialog
-        open={confirmDeleteOpen}
-        onClose={() => setConfirmDeleteOpen(false)}
-        onConfirm={handleDeleteConfirm}
-        title="Excluir Quadro"
-        message={`Tem certeza que deseja excluir o quadro "${selectedBoard?.title}"? Esta ação não pode ser desfeita e todos os cartões serão perdidos.`}
-        confirmText="Excluir"
-        cancelText="Cancelar"
-        severity="error"
-      />
-      
-      {/* Snackbar for notifications */}
-      <Snackbar 
-        open={snackbar.open} 
-        autoHideDuration={6000} 
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert 
-          onClose={handleCloseSnackbar} 
-          severity={snackbar.severity} 
-          sx={{ width: '100%' }}
+            <FilterListIcon />
+          </IconButton>
+        </Tooltip>
+        
+        <Menu
+          anchorEl={filterAnchorEl}
+          open={Boolean(filterAnchorEl)}
+          onClose={handleFilterClose}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-      
-      {/* Processing indicator */}
-      <Backdrop
-        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        open={processingAction}
-      >
-        <CircularProgress color="inherit" />
-      </Backdrop>
+          <MenuItem 
+            onClick={() => handlePeriodChange('day')}
+            selected={selectedPeriod === 'day'}
+          >
+            Hoje
+          </MenuItem>
+          <MenuItem 
+            onClick={() => handlePeriodChange('week')}
+            selected={selectedPeriod === 'week'}
+          >
+            Esta Semana
+          </MenuItem>
+          <MenuItem 
+            onClick={() => handlePeriodChange('month')}
+            selected={selectedPeriod === 'month'}
+          >
+            Este Mês
+          </MenuItem>
+          <MenuItem 
+            onClick={() => handlePeriodChange('all')}
+            selected={selectedPeriod === 'all'}
+          >
+            Todos
+          </MenuItem>
+        </Menu>
+        
+        <Tooltip title="Adicionar">
+          <IconButton 
+            color="primary" 
+            sx={{ bgcolor: 'secondary.light', borderRadius: 2 }}
+            onClick={handleMenuOpen}
+          >
+            <AddIcon />
+          </IconButton>
+        </Tooltip>
+        
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleMenuClose}
+        >
+          <MenuItem onClick={handleMenuClose}>Novo Quadro</MenuItem>
+          <MenuItem onClick={handleMenuClose}>Nova Tarefa</MenuItem>
+          <MenuItem onClick={handleMenuClose}>Novo Projeto</MenuItem>
+        </Menu>
+      </Box>
+
+      {/* Cards de estatísticas */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ 
+            p: 3, 
+            borderRadius: 3, 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+            height: '100%',
+            bgcolor: 'neutral.white',
+            border: '1px solid',
+            borderColor: 'neutral.light',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary">Tarefas Pendentes</Typography>
+              <Badge 
+                color={stats.pendingTasks > 5 ? "error" : "info"} 
+                variant="dot"
+              />
+            </Box>
+            <Typography variant="h3" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.dark' }}>
+              {stats.pendingTasks}
+            </Typography>
+            <Box sx={{ mt: 'auto', pt: 2, display: 'flex', alignItems: 'center' }}>
+              <ArrowUpwardIcon 
+                color="error" 
+                fontSize="small" 
+                sx={{ mr: 0.5 }} 
+              />
+              <Typography variant="body2" color="text.secondary">
+                {stats.pendingTasks > 5 ? 'Atenção necessária' : 'Dentro do esperado'}
+              </Typography>
+            </Box>
+          </Paper>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ 
+            p: 3, 
+            borderRadius: 3, 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+            height: '100%',
+            bgcolor: 'neutral.white',
+            border: '1px solid',
+            borderColor: 'neutral.light',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary">Projetos Ativos</Typography>
+              <Badge 
+                color="success" 
+                variant="dot"
+              />
+            </Box>
+            <Typography variant="h3" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.dark' }}>
+              {stats.activeProjects}
+            </Typography>
+            <Box sx={{ mt: 'auto', pt: 2, display: 'flex', alignItems: 'center' }}>
+              {stats.activeProjects > 0 ? (
+                <>
+                  <TodayIcon 
+                    color="info" 
+                    fontSize="small" 
+                    sx={{ mr: 0.5 }} 
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    Em andamento
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Nenhum no momento
+                </Typography>
+              )}
+            </Box>
+          </Paper>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ 
+            p: 3, 
+            borderRadius: 3, 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+            height: '100%',
+            bgcolor: 'neutral.white',
+            border: '1px solid',
+            borderColor: 'neutral.light',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary">Orçamentos Pendentes</Typography>
+              <Badge 
+                color={stats.pendingQuotes > 0 ? "warning" : "success"} 
+                variant="dot"
+              />
+            </Box>
+            <Typography variant="h3" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.dark' }}>
+              {stats.pendingQuotes}
+            </Typography>
+            <Box sx={{ mt: 'auto', pt: 2, display: 'flex', alignItems: 'center' }}>
+              {stats.pendingQuotes > 0 ? (
+                <>
+                  <AccessTimeIcon 
+                    color="warning" 
+                    fontSize="small" 
+                    sx={{ mr: 0.5 }} 
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    Aguardando aprovação
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Nenhum pendente
+                </Typography>
+              )}
+            </Box>
+          </Paper>
+        </Grid>
+        
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ 
+            p: 3, 
+            borderRadius: 3, 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+            height: '100%',
+            bgcolor: 'neutral.white',
+            border: '1px solid',
+            borderColor: 'neutral.light',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary">Tarefas Concluídas</Typography>
+              <Badge 
+                color="success" 
+                variant="dot"
+              />
+            </Box>
+            <Typography variant="h3" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.dark' }}>
+              {stats.completedTasks}
+            </Typography>
+            <Box sx={{ mt: 'auto', pt: 2, display: 'flex', alignItems: 'center' }}>
+              <ArrowUpwardIcon 
+                color="success" 
+                fontSize="small" 
+                sx={{ mr: 0.5 }} 
+              />
+              <Typography variant="body2" color="text.secondary">
+                Este mês
+              </Typography>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Gráficos e lista de tarefas */}
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={7}>
+          <Card sx={{ 
+            borderRadius: 3, 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+            overflow: 'hidden',
+            bgcolor: 'neutral.white',
+            height: '100%'
+          }}>
+            <CardHeader
+              title="Tarefas Recentes"
+              action={
+                <Box sx={{ display: 'flex' }}>
+                  <Tooltip title="Ver todas">
+                    <IconButton component={Link} to="/boards">
+                      <VisibilityIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <IconButton>
+                    <MoreVertIcon />
+                  </IconButton>
+                </Box>
+              }
+              sx={{ bgcolor: 'secondary.light', py: 2 }}
+            />
+            <CardContent sx={{ p: 0, maxHeight: 500, overflow: 'auto' }}>
+              {recentTasks.length === 0 ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography variant="body1" color="text.secondary">
+                    Nenhuma tarefa encontrada
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    sx={{ mt: 2 }}
+                    component={Link}
+                    to="/boards"
+                  >
+                    Criar Tarefa
+                  </Button>
+                </Box>
+              ) : (
+                <List>
+                  {recentTasks.map((task) => (
+                    <React.Fragment key={task.id}>
+                      <ListItem 
+                        component={Link} 
+                        to={`/boards/${task.boardId}`}
+                        sx={{ 
+                          py: 2,
+                          px: 3,
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          '&:hover': {
+                            bgcolor: 'neutral.light'
+                          }
+                        }}
+                      >
+                        <ListItemAvatar>
+                          <Tooltip title={task.boardTitle}>
+                            <Avatar sx={{ bgcolor: 'primary.main' }}>
+                              {task.boardTitle.charAt(0)}
+                            </Avatar>
+                          </Tooltip>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                              <Typography variant="subtitle1" sx={{ mr: 1 }}>
+                                {task.title}
+                              </Typography>
+                              {getTaskStatusChip(task)}
+                            </Box>
+                          }
+                          secondary={
+                            <Box>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                {task.description && task.description.length > 60
+                                  ? `${task.description.substring(0, 60)}...`
+                                  : task.description || "Sem descrição"}
+                              </Typography>
+                              
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+                                    {task.dueDate ? formatDate(task.dueDate) : 'Sem prazo'}
+                                  </Typography>
+                                  
+                                  {task.members && task.members.length > 0 && (
+                                    <AvatarGroup max={3} sx={{ '& .MuiAvatar-root': { width: 20, height: 20, fontSize: '0.625rem' } }}>
+                                      {task.members.map((member, idx) => (
+                                        <Avatar key={idx} sx={{ bgcolor: 'primary.main' }}>
+                                          {typeof member === 'string' ? member.charAt(0) : 'U'}
+                                        </Avatar>
+                                      ))}
+                                    </AvatarGroup>
+                                  )}
+                                </Box>
+                                
+                                <Typography variant="caption" color="text.secondary">
+                                  {task.columnTitle}
+                                </Typography>
+                              </Box>
+                              
+                              <LinearProgress 
+                                variant="determinate" 
+                                value={getTaskProgress(task)} 
+                                sx={{ 
+                                  mt: 1,
+                                  height: 6, 
+                                  borderRadius: 3,
+                                  bgcolor: 'neutral.light',
+                                  '& .MuiLinearProgress-bar': {
+                                    bgcolor: 
+                                      task.columnTitle.toLowerCase() === 'concluído' || task.columnTitle.toLowerCase() === 'done'
+                                        ? 'success.main' 
+                                        : getTaskProgress(task) === 100 
+                                          ? 'error.main'
+                                          : getTaskProgress(task) > 75
+                                            ? 'warning.main'
+                                            : 'info.main'
+                                  }
+                                }}
+                              />
+                            </Box>
+                          }
+                        />
+                      </ListItem>
+                      <Divider component="li" />
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={5}>
+          <Grid container spacing={3} sx={{ height: '100%' }}>
+            <Grid item xs={12}>
+              <Card sx={{ 
+                borderRadius: 3, 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+                overflow: 'hidden',
+                bgcolor: 'neutral.white'
+              }}>
+                <CardHeader
+                  title="Visão Geral de Tarefas"
+                  sx={{ bgcolor: 'secondary.light', py: 2 }}
+                />
+                <CardContent sx={{ height: 240 }}>
+                  {tasksByStatus.length === 0 ? (
+                    <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="body1" color="text.secondary">
+                        Nenhum dado disponível
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={tasksByStatus}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                          nameKey="name"
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {tasksByStatus.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <Card sx={{ 
+                borderRadius: 3, 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)', 
+                overflow: 'hidden',
+                bgcolor: 'neutral.white'
+              }}>
+                <CardHeader
+                  title="Quadros Favoritos"
+                  action={
+                    <IconButton component={Link} to="/boards">
+                      <VisibilityIcon />
+                    </IconButton>
+                  }
+                  sx={{ bgcolor: 'secondary.light', py: 2 }}
+                />
+                <CardContent sx={{ p: 0 }}>
+                  {favoriteBoards.length === 0 ? (
+                    <Box sx={{ p: 3, textAlign: 'center' }}>
+                      <Typography variant="body1" color="text.secondary">
+                        Nenhum quadro favorito
+                      </Typography>
+                      <Button 
+                        variant="contained" 
+                        sx={{ mt: 2 }}
+                        component={Link}
+                        to="/boards"
+                      >
+                        Ver Quadros
+                      </Button>
+                    </Box>
+                  ) : (
+                    <List sx={{ py: 0 }}>
+                      {favoriteBoards.slice(0, 5).map((board) => (
+                        <React.Fragment key={board.id}>
+                          <ListItem 
+                            component={Link} 
+                            to={`/boards/${board.id}`}
+                            sx={{ 
+                              py: 2,
+                              px: 3, 
+                              textDecoration: 'none',
+                              color: 'inherit',
+                              '&:hover': {
+                                bgcolor: 'neutral.light'
+                              }
+                            }}
+                          >
+                            <ListItemAvatar>
+                              <Avatar 
+                                sx={{ 
+                                  bgcolor: board.color || 'primary.main',
+                                  color: 'white'
+                                }}
+                              >
+                                {board.title.charAt(0)}
+                              </Avatar>
+                            </ListItemAvatar>
+                            <ListItemText
+                              primary={board.title}
+                              secondary={formatDate(board.updatedAt)}
+                            />
+                            <ListItemSecondaryAction>
+                              <IconButton edge="end">
+                                {board.favorite ? (
+                                  <StarIcon color="warning" />
+                                ) : (
+                                  <StarBorderIcon />
+                                )}
+                              </IconButton>
+                            </ListItemSecondaryAction>
+                          </ListItem>
+                          <Divider component="li" />
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
     </Box>
   );
 }
