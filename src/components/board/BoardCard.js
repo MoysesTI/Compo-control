@@ -10,7 +10,8 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Divider
+  Divider,
+  Tooltip
 } from '@mui/material';
 import {
   AccessTime as AccessTimeIcon,
@@ -18,10 +19,13 @@ import {
   AttachFile as AttachFileIcon,
   MoreVert as MoreVertIcon,
   Delete as DeleteIcon,
-  ContentCopy as CopyIcon,
+  ContentCopy as ContentCopyIcon,
   Archive as ArchiveIcon,
   Edit as EditIcon,
-  Label as LabelIcon
+  Label as LabelIcon,
+  People as PeopleIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon
 } from '@mui/icons-material';
 import { Draggable } from '@hello-pangea/dnd';
 
@@ -37,13 +41,14 @@ const BoardCard = ({
   onDuplicateCard,
   onArchiveCard,
   onEditCard,
+  onAssignMembers,
   onManageLabels
 }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   
   // Abrir menu de contexto
   const handleMenuOpen = (event) => {
-    event.stopPropagation();
+    event.stopPropagation(); // Impede a propagação do clique
     setAnchorEl(event.currentTarget);
   };
   
@@ -52,6 +57,48 @@ const BoardCard = ({
     setAnchorEl(null);
   };
   
+  // Lidar com clique para editar
+  const handleEdit = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onEditCard) onEditCard();
+  };
+  
+  // Lidar com clique para excluir
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onDeleteCard) onDeleteCard();
+  };
+  
+  // Lidar com clique para duplicar
+  const handleDuplicate = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onDuplicateCard) onDuplicateCard();
+  };
+  
+  // Lidar com clique para arquivar
+  const handleArchive = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onArchiveCard) onArchiveCard();
+  };
+  
+  // Lidar com clique em atribuir membros
+  const handleAssignMembers = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onAssignMembers) onAssignMembers();
+  };
+  
+  // Lidar com clique em gerenciar etiquetas
+  const handleManageLabels = (e) => {
+    e.stopPropagation();
+    handleMenuClose();
+    if (onManageLabels) onManageLabels();
+  };
+
   // Função para obter cor da etiqueta
   const getLabelColor = (label) => {
     if (label.color) return label.color;
@@ -74,41 +121,6 @@ const BoardCard = ({
         return '#E8DCC5'; // Bege padrão
     }
   };
-  
-  // Lidar com clique em excluir
-  const handleDelete = (e) => {
-    e.stopPropagation();
-    handleMenuClose();
-    onDeleteCard && onDeleteCard(columnId, card);
-  };
-  
-  // Lidar com clique em duplicar
-  const handleDuplicate = (e) => {
-    e.stopPropagation();
-    handleMenuClose();
-    onDuplicateCard && onDuplicateCard(columnId, card);
-  };
-  
-  // Lidar com clique em arquivar
-  const handleArchive = (e) => {
-    e.stopPropagation();
-    handleMenuClose();
-    onArchiveCard && onArchiveCard(columnId, card);
-  };
-  
-  // Lidar com clique em editar
-  const handleEdit = (e) => {
-    e.stopPropagation();
-    handleMenuClose();
-    onEditCard && onEditCard(columnId, card);
-  };
-  
-  // Lidar com clique em gerenciar etiquetas
-  const handleManageLabels = (e) => {
-    e.stopPropagation();
-    handleMenuClose();
-    onManageLabels && onManageLabels(columnId, card);
-  };
 
   return (
     <Draggable draggableId={card.id} index={index}>
@@ -130,15 +142,29 @@ const BoardCard = ({
             cursor: 'pointer',
             opacity: card.archived ? 0.6 : 1
           }}
-          onClick={() => onCardClick && onCardClick(columnId, card)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onCardClick) onCardClick();
+          }}
         >
+          {/* Visibility indicator */}
+          <Tooltip title={card.visibility === 'private' ? 'Visível apenas para membros atribuídos' : 'Visível para todos'}>
+            <Box sx={{ position: 'absolute', top: 8, right: 8 }}>
+              {card.visibility === 'private' ? (
+                <VisibilityOffIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              ) : (
+                <VisibilityIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              )}
+            </Box>
+          </Tooltip>
+          
           {/* Menu de contexto */}
           <IconButton
             size="small"
             sx={{
               position: 'absolute',
-              top: 8,
-              right: 8,
+              top: 4,
+              right: 32,
               opacity: 0.6,
               '&:hover': { opacity: 1 }
             }}
@@ -157,8 +183,12 @@ const BoardCard = ({
               Editar
             </MenuItem>
             <MenuItem onClick={handleDuplicate}>
-              <CopyIcon fontSize="small" sx={{ mr: 1 }} />
+              <ContentCopyIcon fontSize="small" sx={{ mr: 1 }} />
               Duplicar
+            </MenuItem>
+            <MenuItem onClick={handleAssignMembers}>
+              <PeopleIcon fontSize="small" sx={{ mr: 1 }} />
+              Atribuir Membros
             </MenuItem>
             <MenuItem onClick={handleManageLabels}>
               <LabelIcon fontSize="small" sx={{ mr: 1 }} />
@@ -193,7 +223,7 @@ const BoardCard = ({
           </Box>
           
           {/* Título */}
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, pr: 5 }}>
             {card.title}
           </Typography>
           

@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { 
   Dialog, 
   DialogTitle, 
+  DialogContent,
+  DialogContentText,
   DialogActions, 
   Button, 
   Snackbar, 
@@ -88,16 +90,22 @@ const CardDeletionHandler = ({
       <Dialog 
         open={open} 
         onClose={() => !loading && onClose()}
-        maxWidth="xs"
+        maxWidth="sm"
         fullWidth
       >
         <DialogTitle>Excluir Cartão</DialogTitle>
         
-        {error && (
-          <Alert severity="error" sx={{ mx: 3, mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+        <DialogContent>
+          <DialogContentText>
+            Tem certeza que deseja excluir o cartão "{cardTitle}"? Esta ação não pode ser desfeita.
+          </DialogContentText>
+          
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {error}
+            </Alert>
+          )}
+        </DialogContent>
         
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button 
@@ -108,7 +116,7 @@ const CardDeletionHandler = ({
           </Button>
           <Button 
             onClick={handleDeleteCard} 
-            color="primary" 
+            color="error" 
             variant="contained"
             disabled={loading}
             startIcon={loading ? <CircularProgress size={20} /> : null}

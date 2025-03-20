@@ -40,7 +40,7 @@ export const columnService = {
       console.log(`Fetching columns for board: ${boardId}`);
       const columnsRef = collection(db, "boards", boardId, "columns");
       let columnsQuery;
-      
+      console.log(columnsQuery)
       if (!includeArchived) {
         columnsQuery = query(
           columnsRef, 
