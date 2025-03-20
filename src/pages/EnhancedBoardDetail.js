@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -80,6 +80,7 @@ export default function EnhancedBoardDetail() {
   const { id: boardId } = useParams();
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
+  const isFetchingRef = useRef(false);
   const [deletingCard, setDeletingCard] = useState(null);
   const [deletingColumn, setDeletingColumn] = useState(null);
   // State for board and columns
@@ -124,8 +125,17 @@ export default function EnhancedBoardDetail() {
   const [archivedCardsDialogOpen, setArchivedCardsDialogOpen] = useState(false);
   const [manageLabelsDialogOpen, setManageLabelsDialogOpen] = useState(false);
 
-  // Fetch board data and team members
+  // Função fetchBoardData modificada com proteção contra chamadas duplicadas
   const fetchBoardData = useCallback(async () => {
+    // Verificar se já está buscando dados
+    if (isFetchingRef.current) {
+      console.log("Fetch already in progress, skipping redundant call");
+      return;
+    }
+    
+    // Marcar como em progresso
+    isFetchingRef.current = true;
+    
     try {
       setLoading(true);
       console.log(`Fetching board data for board: ${boardId}`);
@@ -137,6 +147,7 @@ export default function EnhancedBoardDetail() {
       if (!boardSnap.exists()) {
         setError("Quadro não encontrado");
         setLoading(false);
+        isFetchingRef.current = false; // Importante: resetar a flag
         return;
       }
 
@@ -200,10 +211,13 @@ export default function EnhancedBoardDetail() {
         message: `Erro ao carregar o quadro: ${error.message}`,
         severity: "error",
       });
+    } finally {
+      // Importante: sempre resetar a flag, seja bem-sucedido ou não
+      isFetchingRef.current = false;
     }
   }, [boardId, currentUser, userProfile]);
 
-  // Load board data on component mount
+  // useEffect mantido, mas agora protegido contra chamadas duplicadas
   useEffect(() => {
     fetchBoardData();
   }, [fetchBoardData]);
