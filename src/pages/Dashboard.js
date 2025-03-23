@@ -39,6 +39,10 @@ import { useCollection, firestoreService } from '../hooks/firebase-hooks';
 import { Link } from 'react-router-dom';
 import { where } from 'firebase/firestore';
 
+// Importar os componentes financeiros
+import FinancialOverview from '../components/dashboard/FinancialOverview';
+import FinancialAnalysis from '../components/dashboard/FinancialAnalysis';
+
 export default function Dashboard() {
   const { userProfile } = useAuth();
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -53,6 +57,9 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  
+  // Estado para o período financeiro
+  const [financialPeriod, setFinancialPeriod] = useState('month');
 
   // Get tasks with real-time updates
   const queryConstraints = filterStatus !== 'all' 
@@ -284,6 +291,12 @@ export default function Dashboard() {
           </MenuItem>
         </Menu>
       </Box>
+
+      {/* Componente de Visão Geral Financeira */}
+      <FinancialOverview period={financialPeriod} onChangePeriod={setFinancialPeriod} />
+
+      {/* Componente de Análise Financeira */}
+      <FinancialAnalysis />
 
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>

@@ -1,0 +1,61 @@
+{
+    "indexes": [
+      {
+        "collectionGroup": "orcamentos",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "status", "order": "ASCENDING" },
+          { "fieldPath": "dataCriacao", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "orcamentos",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "cliente", "order": "ASCENDING" },
+          { "fieldPath": "valorTotal", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "orcamentos",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "servico", "order": "ASCENDING" },
+          { "fieldPath": "dataCriacao", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "orcamentos",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "userId", "order": "ASCENDING" },
+          { "fieldPath": "dataCriacao", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "notasFiscais",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "status", "order": "ASCENDING" },
+          { "fieldPath": "dataEmissao", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "notasFiscais",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "cliente", "order": "ASCENDING" },
+          { "fieldPath": "valor", "order": "DESCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "notasFiscais",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "orcamentoId", "order": "ASCENDING" },
+          { "fieldPath": "dataEmissao", "order": "DESCENDING" }
+        ]
+      }
+    ],
+    "fieldOverrides": []
+  } 

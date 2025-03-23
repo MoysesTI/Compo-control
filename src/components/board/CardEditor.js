@@ -65,7 +65,7 @@ export default function CardEditor({
   const [newLabel, setNewLabel] = useState('');
   
   // Set initial form values when editing
-  useEffect(() => {
+  useEffect(() => { 
     if (cardData) {
       setTitle(cardData.title || '');
       setDescription(cardData.description || '');
